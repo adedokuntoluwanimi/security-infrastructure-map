@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Security Infrastructure Map - Comparison</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+  <style>
+    html,body{height:100%;margin:0;font-family:Arial,Helvetica,sans-serif}
+    #map{position:fixed;left:0;top:0;right:0;bottom:0}
+    /* Left comparison card */
+    #compare-card{
+      position: absolute;
+      left: 12px;
+      top: 80px;
+      width:300px;
+      background:#fff;
+      border-radius:6px;
+      box-shadow:0 6px 18px rgba(0,0,0,0.12);
+      padding:12px;
+      z-index:2000;
+      font-size:13px;
+    }
+    #compare-card h3{margin:0 0 8px 0;font-size:15px}
+    #compare-card label{display:block;margin:6px 0 4px 0;font-weight:600;font-size:12px}
+    #compare-card select, #compare-card input[type="text"]{
+      width:100%;
+      padding:6px 8px;
+      box-sizing:border-box;
+      border:1px solid #ccc;
+      border-radius:4px;
+      font-size:13px;
+    }
+    #compare-card .btn-row{display:flex;gap:8px;margin-top:10px}
+    .btn{
+      flex:1;
+      padding:8px 10px;
+      text-align:center;
+      border-radius:4px;
+      cursor:pointer;
+      user-select:none;
+    }
+    .btn-primary{background:#111;color:#fff;border:0}
+    .btn-light{background:#f2f2f2;border:1px solid #ccc}
+    /* Top-right search area (under legend) */
+    #top-right-search{
+      position:absolute;
+      right:12px;
+      top:80px;
+      width:320px;
+      z-index:2000;
+    }
+    #search-card{
+      background:#fff;padding:8px;border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,0.12);
+      font-size:13px;
+    }
+    #search-card input{width:100%;padding:6px;border:1px solid #ccc;border-radius:4px}
+    #download-popup{
+      position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3000;
+      background:#fff;padding:14px;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,0.2);
+      display:none;width:720px;max-width:95%;
+    }
+    #download-popup .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+    #download-popup canvas{max-width:100%}
+    #bottom-logo{
+      position:fixed;
+      right:8px;
+      bottom:28px;
+      z-index:2100;
+      opacity:0.95;
+    }
+    #bottom-logo img{height:44px;display:block}
+    /* small responsive tweak */
+    @media(max-width:900px){
+      #compare-card{width:260px}
+      #top-right-search{width:220px}
+    }
+  </style>
+
+  <!-- FORCE proj4 to load FIRST (required by your QGIS2Web export). -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.7.6/proj4.js"></script>
+
+  <!-- OpenLayers -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@7.4.0/ol.css">
+  <script src="https://cdn.jsdelivr.net/npm/ol@7.4.0/dist/ol.js"></script>
+
+  <!-- Chart and PDF libs -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <!-- QGIS2Web layer files (must remain after proj4 and OL) -->
+  <script src="layers/army_3.js"></script>
+  <script src="layers/boundaries_2.js"></script>
+  <script src="layers/checkpoints_5.js"></script>
+  <script src="layers/layers.js"></script>
+  <script src="layers/police_4.js"></script>
+  <script src="layers/RiskIndex_1.js"></script>
+
+</head>
+<body>
+
+<div id="map" class="map"></div>
+
+<!-- Left comparison card -->
+<div id="compare-card" aria-hidden="false">
+  <h3>Region comparison</h3>
+  <label for="level">Comparison level</label>
+  <select id="level">
+    <option value="state">State</option>
+    <option value="lga">LGA</option>
+    <option value="ward">Ward</option>
+  </select>
+
+  <label for="regionA">Region A</label>
+  <select id="regionA"><option>-- select --</option></select>
+
+  <label for="regionB">Region B</label>
+  <select id="regionB"><option>-- select --</option></select>
+
+  <div class="btn-row">
+    <div class="btn btn-primary" id="btnCompare">Compare</div>
+    <div class="btn btn-light" id="btnResetView">Reset view</div>
+  </div>
+</div>
+
+<!-- Top-right search card -->
+<div id="top-right-search">
+  <div id="search-card">
+    <label for="search-input" style="font-weight:600;font-size:12px">Search state, LGA or ward</label>
+    <input id="search-input" placeholder="Type a state, LGA, or ward and press Enter">
+    <div style="text-align:right;margin-top:6px">
+      <button id="btnSearch" class="btn btn-primary" style="padding:6px 10px">Search</button>
+    </div>
+  </div>
+</div>
+
+<!-- Download / Chart popup -->
+<div id="download-popup" role="dialog" aria-modal="true">
+  <div class="modal-header">
+    <strong id="modal-title">Comparison</strong>
+    <button id="close-popup" style="background:transparent;border:0;font-size:18px;cursor:pointer">&times;</button>
+  </div>
+
+  <div id="chart-container" style="width:100%;height:360px">
+    <canvas id="comparisonChart"></canvas>
+  </div>
+
+  <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
+    <button id="btnDownloadPdf" class="btn btn-primary">Download PDF</button>
+    <button id="btnClose" class="btn btn-light">Close</button>
+  </div>
+</div>
+
+<!-- Bottom-right logo -->
+<div id="bottom-logo">
+  <img src="images/logo.jpg" alt="company logo">
+</div>
+
+<script>
+  /* Map bootstrap and layer attachment using the exact layer variables exported by QGIS2Web
+     (lyr_OpenStreetMap_0, lyr_RiskIndex_1, lyr_boundaries_2, lyr_army_3, lyr_police_4, lyr_checkpoints_5)
+     These names come from your layers.js. See file reference. :contentReference[oaicite:1]{index=1}
+  */
+
+  // Basic OpenLayers map and view
+  const view = new ol.View({
+    center: ol.proj.fromLonLat([7.5, 9.0]),
+    zoom: 5
+  });
+
+  // create map with correct control method for OL7
+  const map = new ol.Map({
+    target: 'map',
+    view: view,
+    controls: ol.control.defaults.defaults().extend([ new ol.control.ScaleLine() ])
+  });
+
+  // Attach QGIS2Web layers that were loaded from layers/*.js
+  try {
+    // Known variables created by your layers.js
+    const possibleLayers = [
+      'lyr_OpenStreetMap_0',
+      'lyr_RiskIndex_1',
+      'lyr_boundaries_2',
+      'lyr_army_3',
+      'lyr_police_4',
+      'lyr_checkpoints_5'
+    ];
+    for (const name of possibleLayers){
+      if (window[name] instanceof ol.layer.Layer){
+        map.addLayer(window[name]);
+      }
+    }
+    // Also attach any "lyr_*" layer variables present
+    for (const key in window){
+      if (key.startsWith('lyr_') && window[key] instanceof ol.layer.Layer && !possibleLayers.includes(key)){
+        map.addLayer(window[key]);
+      }
+    }
+  } catch(e){
+    console.warn('Layer attach warning', e);
+  }
+
+  // Ensure we have a base if none
+  if (!map.getLayers().getLength()){
+    const base = new ol.layer.Tile({ source: new ol.source.OSM() });
+    map.addLayer(base);
+  }
+
+  // Highlight layer for selections
+  const highlightSource = new ol.source.Vector();
+  const highlightLayer = new ol.layer.Vector({
+    source: highlightSource,
+    style: new ol.style.Style({
+      stroke: new ol.style.Stroke({color:'#ff6600',width:3}),
+      fill: new ol.style.Fill({color:'rgba(255,102,0,0.12)'})
+    })
+  });
+  map.addLayer(highlightLayer);
+
+  // Expose app objects for compare.js
+  window.APP = { map, view, highlightSource, highlightLayer };
+</script>
+
+<!-- custom compare logic (existing compare.js) -->
+<script src="compare.js"></script>
+
+</body>
+</html>
